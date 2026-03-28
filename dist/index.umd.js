@@ -1,0 +1,152 @@
+(function (global, factory) {
+    typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
+    typeof define === 'function' && define.amd ? define(['exports'], factory) :
+    (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.ArgyrosSDK = {}));
+})(this, (function (exports) { 'use strict';
+
+    class ArgyrosError extends Error {
+        constructor(message, statusCode, body) {
+            super(message);
+            this.statusCode = statusCode;
+            this.body = body;
+            this.name = "ArgyrosError";
+        }
+    }
+    class RateLimitError extends ArgyrosError {
+        constructor(body) {
+            super("Rate limit exceeded", 429, body);
+            this.name = "RateLimitError";
+        }
+    }
+    class NoRouteError extends ArgyrosError {
+        constructor(body) {
+            super("No route found", 404, body);
+            this.name = "NoRouteError";
+        }
+    }
+    class BadRequestError extends ArgyrosError {
+        constructor(message, body) {
+            super(message, 400, body);
+            this.name = "BadRequestError";
+        }
+    }
+    class AuthError extends ArgyrosError {
+        constructor(body) {
+            super("Invalid or missing API key", 401, body);
+            this.name = "AuthError";
+        }
+    }
+    class ServerError extends ArgyrosError {
+        constructor(message, body) {
+            super(message, 500, body);
+            this.name = "ServerError";
+        }
+    }
+
+    const DEFAULT_BASE_URL = "https://api.argyros.trade";
+    const DEFAULT_TIMEOUT = 30000;
+    const DEFAULT_RETRIES = 2;
+    class ArgyrosSDK {
+        constructor(config) {
+            if (!config.apiKey)
+                throw new Error("apiKey is required");
+            this.apiKey = config.apiKey;
+            this.chain = config.chain ?? "solana";
+            this.baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+            this.timeout = config.timeout ?? DEFAULT_TIMEOUT;
+            this.retries = config.retries ?? DEFAULT_RETRIES;
+        }
+        async quote(params) {
+            const qs = new URLSearchParams({
+                inputMint: params.inputMint,
+                outputMint: params.outputMint,
+                amount: params.amount,
+                swapMode: params.swapMode,
+            });
+            if (params.slippageBps !== undefined) {
+                qs.set("slippageBps", String(params.slippageBps));
+            }
+            return this.request("GET", `/api/v1/quote?${qs}`);
+        }
+        async swap(params) {
+            return this.request("POST", "/api/v1/swap", params);
+        }
+        async instructions(params) {
+            return this.request("POST", "/api/v1/instructions", params);
+        }
+        async request(method, path, body) {
+            const separator = path.includes("?") ? "&" : "?";
+            const url = `${this.baseUrl}${path}${separator}chain=${this.chain}`;
+            const headers = {
+                Authorization: `Bearer ${this.apiKey}`,
+                Accept: "application/json",
+            };
+            if (body) {
+                headers["Content-Type"] = "application/json";
+            }
+            let lastError;
+            for (let attempt = 0; attempt <= this.retries; attempt++) {
+                if (attempt > 0) {
+                    await sleep(Math.min(1000 * 2 ** (attempt - 1), 8000));
+                }
+                try {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), this.timeout);
+                    const res = await fetch(url, {
+                        method,
+                        headers,
+                        body: body ? JSON.stringify(body) : undefined,
+                        signal: controller.signal,
+                    });
+                    clearTimeout(timer);
+                    if (res.ok) {
+                        return (await res.json());
+                    }
+                    const errBody = await res.json().catch(() => ({}));
+                    const errMsg = errBody?.error ?? res.statusText;
+                    switch (res.status) {
+                        case 401:
+                        case 403:
+                            throw new AuthError(errBody);
+                        case 400:
+                            throw new BadRequestError(errMsg, errBody);
+                        case 404:
+                            throw new NoRouteError(errBody);
+                        case 429:
+                            lastError = new RateLimitError(errBody);
+                            continue;
+                        default:
+                            if (res.status >= 500) {
+                                lastError = new ServerError(errMsg, errBody);
+                                continue;
+                            }
+                            throw new ArgyrosError(errMsg, res.status, errBody);
+                    }
+                }
+                catch (err) {
+                    if (err instanceof AuthError ||
+                        err instanceof BadRequestError ||
+                        err instanceof NoRouteError ||
+                        err instanceof ArgyrosError) {
+                        throw err;
+                    }
+                    lastError = err;
+                }
+            }
+            throw lastError ?? new Error("request failed");
+        }
+    }
+    function sleep(ms) {
+        return new Promise((r) => setTimeout(r, ms));
+    }
+
+    exports.ArgyrosError = ArgyrosError;
+    exports.ArgyrosSDK = ArgyrosSDK;
+    exports.AuthError = AuthError;
+    exports.BadRequestError = BadRequestError;
+    exports.NoRouteError = NoRouteError;
+    exports.RateLimitError = RateLimitError;
+    exports.ServerError = ServerError;
+
+}));
+//# sourceMappingURL=index.umd.js.map
