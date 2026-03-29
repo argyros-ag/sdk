@@ -17,7 +17,7 @@ import {
   ServerError,
 } from "./errors";
 
-const DEFAULT_BASE_URL = "https://api.argyros.trade";
+const DEFAULT_BASE_URL = "https://api.argyros.xyz";
 const DEFAULT_TIMEOUT = 30_000;
 const DEFAULT_RETRIES = 2;
 

@@ -44,7 +44,7 @@ console.log(`Output: ${quote.amountOut}, Impact: ${quote.priceImpactPercent}`);
 | ----------- | -------- | ----------------------------- | -------------------------- |
 | `apiKey`    | `string` | **required**                  | Your API key               |
 | `chain`     | `string` | `"solana"`                    | `"solana"` or `"fogo"`     |
-| `baseUrl`   | `string` | `"https://api.argyros.trade"` | API base URL               |
+| `baseUrl`   | `string` | `"https://api.argyros.xyz"` | API base URL               |
 | `timeout`   | `number` | `30000`                       | Request timeout in ms      |
 | `retries`   | `number` | `2`                           | Retry count for 429/5xx    |
 
